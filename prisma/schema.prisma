@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model admin_audit_logs {
+  id           Int       @id @default(autoincrement())
+  user_id      Int?
+  target_table String?   @db.VarChar(50)
+  record_id    Int?
+  action       String?   @db.VarChar(20)
+  description  String?
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+  users        users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "fk_audit_user")
+}
+
+model bus_current_location {
+  bus_id     Int       @id
+  latitude   Decimal   @db.Decimal(10, 8)
+  longitude  Decimal   @db.Decimal(11, 8)
+  speed      Decimal?  @db.Decimal(5, 2)
+  heading    Int?
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  buses      buses     @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_current_bus")
+}
+
+model bus_routes {
+  id          Int       @id @default(autoincrement())
+  bus_id      Int
+  route_id    Int
+  assigned_at DateTime? @default(now()) @db.Timestamp(6)
+  buses       buses     @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_bus_routes_bus")
+  routes      routes    @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_bus_routes_route")
+
+  @@unique([bus_id, route_id], map: "unique_bus_route")
+}
+
+model buses {
+  id                   Int                   @id @default(autoincrement())
+  plate                String                @unique @db.VarChar(20)
+  is_active            Boolean?              @default(true)
+  bus_current_location bus_current_location?
+  bus_routes           bus_routes[]
+  gps_devices          gps_devices?
+  proximity_alerts     proximity_alerts[]
+}
+
+model favorites {
+  id       Int    @id @default(autoincrement())
+  user_id  Int
+  route_id Int
+  routes   routes @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_favorites_route")
+  users    users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_favorites_user")
+
+  @@unique([user_id, route_id], map: "unique_user_favorite")
+}
+
+model gps_devices {
+  id           Int            @id @default(autoincrement())
+  device_code  String         @unique @db.VarChar(100)
+  bus_id       Int?           @unique
+  is_active    Boolean?       @default(true)
+  created_at   DateTime?      @default(now()) @db.Timestamp(6)
+  buses        buses?         @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gps_bus")
+  gps_tracking gps_tracking[]
+}
+
+model gps_tracking {
+  id          Int         @id @default(autoincrement())
+  device_id   Int
+  latitude    Decimal     @db.Decimal(10, 8)
+  longitude   Decimal     @db.Decimal(11, 8)
+  speed       Decimal?    @db.Decimal(5, 2)
+  recorded_at DateTime?   @default(now()) @db.Timestamp(6)
+  gps_devices gps_devices @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gps_tracking_device")
+
+  @@index([device_id, recorded_at(sort: Desc)], map: "idx_gps_device_time")
+  @@index([recorded_at(sort: Desc)], map: "idx_gps_time")
+}
+
+model proximity_alerts {
+  id                   Int       @id @default(autoincrement())
+  user_id              Int
+  bus_id               Int
+  stop_id              Int
+  distance_threshold_m Int?      @default(500)
+  is_active            Boolean?  @default(true)
+  created_at           DateTime? @default(now()) @db.Timestamp(6)
+  buses                buses     @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_alert_bus")
+  stops                stops     @relation(fields: [stop_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_alert_stop")
+  users                users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_alert_user")
+}
+
+model roles {
+  id    Int     @id @default(autoincrement())
+  name  String  @unique @db.VarChar(50)
+  users users[]
+}
+
+model route_notifications {
+  id         Int       @id @default(autoincrement())
+  title      String?   @db.VarChar(100)
+  message    String?
+  route_id   Int?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  routes     routes?   @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_route_notifications_route")
+}
+
+model route_stops {
+  id         Int    @id @default(autoincrement())
+  route_id   Int
+  stop_id    Int
+  stop_order Int
+  routes     routes @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_route_stops_route")
+  stops      stops  @relation(fields: [stop_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_route_stops_stop")
+
+  @@unique([route_id, stop_id], map: "unique_route_stop")
+  @@unique([route_id, stop_order], map: "unique_route_stop_order")
+}
+
+model routes {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(100)
+  description         String?
+  created_at          DateTime?             @default(now()) @db.Timestamp(6)
+  bus_routes          bus_routes[]
+  favorites           favorites[]
+  route_notifications route_notifications[]
+  route_stops         route_stops[]
+}
+
+model stops {
+  id               Int                @id @default(autoincrement())
+  name             String             @db.VarChar(100)
+  latitude         Decimal            @db.Decimal(10, 8)
+  longitude        Decimal            @db.Decimal(11, 8)
+  proximity_alerts proximity_alerts[]
+  route_stops      route_stops[]
+}
+
+model users {
+  id               Int                @id @default(autoincrement())
+  name             String             @db.VarChar(100)
+  email            String             @unique @db.VarChar(100)
+  password         String             @db.VarChar(255)
+  role_id          Int?
+  is_active        Boolean?           @default(true)
+  created_at       DateTime?          @default(now()) @db.Timestamp(6)
+  admin_audit_logs admin_audit_logs[]
+  favorites        favorites[]
+  proximity_alerts proximity_alerts[]
+  roles            roles?             @relation(fields: [role_id], references: [id], onUpdate: NoAction, map: "fk_users_roles")
+}
